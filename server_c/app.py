@@ -1,6 +1,7 @@
 from flask import Flask, request
 import os
 import psycopg2
+import requests
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -8,6 +9,8 @@ app = Flask(__name__)
 load_dotenv()
 
 database_url = os.getenv("DATABASE_URL")
+server_y_url = os.getenv("SERVER_Y_URL")
+server_y_api_key = os.getenv("SERVER_Y_API_KEY")
 connection = psycopg2.connect(database_url)
 print("Successfully connected to PostgreSQL!")
 connection.close()
@@ -128,6 +131,21 @@ def login():
         "username": user[1],
         "email": user[2]
     }, 200
+
+@app.route("/sync/likes", methods=["POST"])
+def sync_like():
+    data = request.get_json()
+
+    response = requests.post(
+        f"{server_y_url}/internal/likes",
+        headers={
+            "X-API-Key": server_y_api_key
+        },
+        json=data,
+        timeout=5
+    )
+
+    return response.json(), response.status_code
 
 if __name__ == "__main__":
     app.run(debug=True)

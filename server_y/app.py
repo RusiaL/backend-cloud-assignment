@@ -8,6 +8,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 app = Flask(__name__)
 
 database_url = os.getenv("DATABASE_URL")
+server_c_api_key = os.getenv("SERVER_C_API_KEY")
 
 connection = psycopg2.connect(database_url)
 print("Server Y successfully connected to PostgreSQL!")
@@ -19,6 +20,44 @@ def home():
         "server": "Y",
         "status": "running"
     }
+
+@app.route("/internal/likes", methods=["POST"])
+def internal_create_like():
+    api_key = request.headers.get("X-API-Key")
+
+    if api_key != server_c_api_key:
+        return {
+            "error": "Unauthorized"
+        }, 401
+
+    data = request.get_json()
+
+    user_id = data["user_id"]
+    post_id = data["post_id"]
+
+    connection = psycopg2.connect(database_url)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO likes (user_id, post_id)
+        VALUES (%s, %s)
+        RETURNING id;
+        """,
+        (user_id, post_id)
+    )
+
+    like_id = cursor.fetchone()[0]
+
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+    return {
+        "id": like_id,
+        "user_id": user_id,
+        "post_id": post_id
+    }, 201
 
 @app.route("/likes", methods=["POST"])
 def create_like():
