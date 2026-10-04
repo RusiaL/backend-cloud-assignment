@@ -2,7 +2,7 @@ from flask import Flask, request
 import os
 import psycopg2
 from dotenv import load_dotenv
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 load_dotenv()
@@ -78,6 +78,52 @@ def get_user(user_id):
         }, 404
 
     return {
+        "id": user[0],
+        "username": user[1],
+        "email": user[2]
+    }, 200
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json()
+
+    username = data["username"]
+    password = data["password"]
+
+    connection = psycopg2.connect(database_url)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, username, email, password_hash
+        FROM users
+        WHERE username = %s;
+        """,
+        (username,)
+    )
+
+    user = cursor.fetchone()
+
+    cursor.close()
+    connection.close()
+
+    if user is None:
+        return {
+            "error": "Invalid username or password"
+        }, 401
+
+    password_is_correct = check_password_hash(
+        user[3],
+        password
+    )
+
+    if not password_is_correct:
+        return {
+            "error": "Invalid username or password"
+        }, 401
+
+    return {
+        "message": "Login successful",
         "id": user[0],
         "username": user[1],
         "email": user[2]
