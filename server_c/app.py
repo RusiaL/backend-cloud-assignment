@@ -53,6 +53,35 @@ def create_user():
         "email": email
     }, 201
 
+@app.route("/users/<int:user_id>", methods=["GET"])
+def get_user(user_id):
+    connection = psycopg2.connect(database_url)
+    cursor = connection.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, username, email
+        FROM users
+        WHERE id = %s;
+        """,
+        (user_id,)
+    )
+
+    user = cursor.fetchone()
+
+    cursor.close()
+    connection.close()
+
+    if user is None:
+        return {
+            "error": "User not found"
+        }, 404
+
+    return {
+        "id": user[0],
+        "username": user[1],
+        "email": user[2]
+    }, 200
 
 if __name__ == "__main__":
     app.run(debug=True)
