@@ -11,6 +11,7 @@ load_dotenv()
 database_url = os.getenv("DATABASE_URL")
 server_y_url = os.getenv("SERVER_Y_URL")
 server_y_api_key = os.getenv("SERVER_Y_API_KEY")
+server_x_api_key = os.getenv("SERVER_X_API_KEY")
 connection = psycopg2.connect(database_url)
 print("Successfully connected to PostgreSQL!")
 connection.close()
@@ -134,6 +135,13 @@ def login():
 
 @app.route("/sync/likes", methods=["POST"])
 def sync_like():
+    api_key = request.headers.get("X-API-Key")
+
+    if api_key != server_x_api_key:
+        return {
+            "error": "Unauthorized"
+        }, 401
+
     data = request.get_json()
 
     response = requests.post(
