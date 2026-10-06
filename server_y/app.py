@@ -1,6 +1,7 @@
 from flask import Flask, request
 import os
 import psycopg2
+import requests
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -9,6 +10,8 @@ app = Flask(__name__)
 
 database_url = os.getenv("DATABASE_URL")
 server_c_api_key = os.getenv("SERVER_C_API_KEY")
+server_c_url = os.getenv("SERVER_C_URL")
+server_y_to_c_api_key = os.getenv("SERVER_Y_TO_C_API_KEY")
 
 connection = psycopg2.connect(database_url)
 print("Server Y successfully connected to PostgreSQL!")
@@ -20,6 +23,36 @@ def home():
         "server": "Y",
         "status": "running"
     }
+
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.get_json()
+
+    response = requests.post(
+        f"{server_c_url}/users",
+        headers={
+            "X-API-Key": server_y_to_c_api_key
+        },
+        json=data,
+        timeout=5
+    )
+
+    return response.json(), response.status_code
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json()
+
+    response = requests.post(
+        f"{server_c_url}/login",
+        headers={
+            "X-API-Key": server_y_to_c_api_key
+        },
+        json=data,
+        timeout=5
+    )
+
+    return response.json(), response.status_code
 
 @app.route("/internal/likes", methods=["POST"])
 def internal_create_like():

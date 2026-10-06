@@ -12,6 +12,7 @@ database_url = os.getenv("DATABASE_URL")
 server_y_url = os.getenv("SERVER_Y_URL")
 server_y_api_key = os.getenv("SERVER_Y_API_KEY")
 server_x_api_key = os.getenv("SERVER_X_API_KEY")
+server_y_to_c_api_key = os.getenv("SERVER_Y_TO_C_API_KEY")
 connection = psycopg2.connect(database_url)
 print("Successfully connected to PostgreSQL!")
 connection.close()
@@ -25,6 +26,13 @@ def home():
 
 @app.route("/users", methods=["POST"])
 def create_user():
+    api_key = request.headers.get("X-API-Key")
+
+    if api_key not in [server_x_api_key, server_y_to_c_api_key]:
+        return {
+            "error": "Unauthorized"
+        }, 401
+
     data = request.get_json()
 
     username = data["username"]
@@ -89,6 +97,13 @@ def get_user(user_id):
 
 @app.route("/login", methods=["POST"])
 def login():
+    api_key = request.headers.get("X-API-Key")
+
+    if api_key not in [server_x_api_key, server_y_to_c_api_key]:
+        return {
+            "error": "Unauthorized"
+        }, 401
+
     data = request.get_json()
 
     username = data["username"]

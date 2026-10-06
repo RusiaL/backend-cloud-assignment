@@ -221,6 +221,36 @@ def get_reactions(user_id):
         ]
     }, 200
 
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.get_json()
+
+    response = requests.post(
+        f"{server_c_url}/users",
+        headers={
+            "X-API-Key": server_c_api_key
+        },
+        json=data,
+        timeout=5
+    )
+
+    return response.json(), response.status_code
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json()
+
+    response = requests.post(
+        f"{server_c_url}/login",
+        headers={
+            "X-API-Key": server_c_api_key
+        },
+        json=data,
+        timeout=5
+    )
+
+    return response.json(), response.status_code
+
 @app.route("/sync/likes", methods=["POST"])
 def sync_like():
     data = request.get_json()
