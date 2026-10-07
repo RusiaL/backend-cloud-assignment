@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 .env
 server_y/.env
-server_x/.env
+server_x/.env 
+server_c/.vercel/ 
