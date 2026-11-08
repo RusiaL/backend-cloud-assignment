@@ -1,28 +1,28 @@
 # Backend / Cloud Solution with Python
 
-A small distributed backend system built with **Python, Flask, PostgreSQL, Neon and Vercel**.
+A distributed backend system built with **Python, Flask, PostgreSQL, Neon and Vercel**.
 
-The project demonstrates how three independent services can communicate securely while keeping ownership of their own databases.
+The project demonstrates how three independent backend services can communicate securely while maintaining separate databases and clear ownership of their data.
 
-> **The main rule:**  
-> Nobody gets direct access to somebody else's database.  
-> If Server X needs something from Server Y, it has to go through the front door. No sneaking through the database window. 
+> **The main architectural rule:**
+> Services communicate through APIs, not through each other's databases.
+> Nobody gets direct access to somebody else's database. If Server X needs something from Server Y, it has to go through the front door.
 
 ---
 
-## 1. Project Overview
+# 1. Project Overview
 
 The system consists of three independent Flask services:
 
-- **Server X** — Macepook
-- **Server Y** — Pinstagram
-- **Server C** — Cloud / shared account service
+- **Server X — Macepook:** social interactions for the first platform.
+- **Server Y — Pinstagram:** social interactions for the second platform.
+- **Server C — Cloud:** shared user accounts, authentication and cross-service coordination.
 
-Each social media service has its own PostgreSQL database.
+Each service has its own PostgreSQL database hosted on Neon.
 
-Server C stores shared user account information and acts as an intermediary for cross-service communication.
+Server C is responsible for shared user accounts and authentication. It also acts as an intermediary when one social service needs to trigger an operation on another.
 
-### Architecture
+## Architecture
 
 ```mermaid
 flowchart TD
@@ -34,7 +34,7 @@ flowchart TD
     Y --> DY[(DB Y)]
 ```
 
-The important synchronization path is:
+The synchronization path is:
 
 ```mermaid
 flowchart LR
@@ -45,9 +45,9 @@ flowchart LR
 
 Server X never connects directly to DB Y.
 
-Server C also does not connect directly to DB Y. It asks Server Y to perform the operation.
+Server C also does not connect directly to DB Y. It asks Server Y to perform the operation through its API.
 
-This keeps database ownership clear and services independent.
+This keeps database ownership clear and allows the services to remain independent.
 
 ---
 
@@ -60,8 +60,7 @@ This keeps database ownership clear and services independent.
 **Database:** DB X
 
 **Production URL:**
-
-`https://server-x-five.vercel.app`
+https://server-x-five.vercel.app
 
 ### Endpoints
 
@@ -74,9 +73,13 @@ This keeps database ownership clear and services independent.
 | GET | `/comments/<user_id>` | Get user's comments |
 | POST | `/reactions` | Create a reaction |
 | GET | `/reactions/<user_id>` | Get user's reactions |
-| POST | `/register` | Register a shared user through Server C |
-| POST | `/login` | Login through Server C |
-| POST | `/sync/likes` | Request synchronization with Server Y through Server C |
+| POST | `/sync/likes` | Request synchronization through Server C |
+
+Social endpoints require a valid JWT access token issued by Server C.
+
+The `/sync/likes` endpoint uses an API key to authenticate the request to Server C.
+
+Server X does not manage user registration or login. Shared accounts are managed by Server C.
 
 ---
 
@@ -87,16 +90,13 @@ This keeps database ownership clear and services independent.
 **Database:** DB Y
 
 **Production URL:**
-
-`https://server-y.vercel.app`
+https://server-y.vercel.app
 
 ### Endpoints
 
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/` | Health/status check |
-| POST | `/register` | Register a shared user through Server C |
-| POST | `/login` | Login through Server C |
 | POST | `/likes` | Create a like |
 | GET | `/likes/<user_id>` | Get user's likes |
 | POST | `/comments` | Create a comment |
@@ -105,31 +105,38 @@ This keeps database ownership clear and services independent.
 | GET | `/reactions/<user_id>` | Get user's reactions |
 | POST | `/internal/likes` | Internal endpoint used by Server C |
 
-The `/internal/likes` endpoint is protected by an API key and is intended for service-to-service communication.
+Social endpoints require a valid JWT access token issued by Server C.
+
+The `/internal/likes` endpoint is protected by an API key and is intended for service-to-service communication. It is not a public client endpoint.
+
+Server Y does not manage user registration or login.
 
 ---
 
 ## Server C — Cloud
 
-**Responsibility:** manages shared user accounts and coordinates communication between services.
+**Responsibility:** manages shared user accounts, authentication, email verification and cross-service communication.
 
 **Database:** DB C
 
 **Production URL:**
-
-`https://server-c-iota.vercel.app`
+https://server-c-iota.vercel.app
 
 ### Endpoints
 
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/` | Health/status check |
-| POST | `/users` | Create a shared user |
-| GET | `/users/<user_id>` | Retrieve a user |
-| POST | `/login` | Authenticate a user |
+| POST | `/users` | Register a shared user |
+| GET | `/users/<user_id>` | Retrieve the authenticated user's profile |
+| POST | `/login` | Authenticate a user and issue a JWT |
+| GET | `/verify-email/<token>` | Verify an email address |
+| POST | `/resend-verification` | Resend an email verification link |
 | POST | `/sync/likes` | Forward a like operation to Server Y |
 
-Server C owns DB C and stores shared account information.
+Server C owns DB C and stores shared user account information.
+
+Registration and login are performed directly through Server C. Both social services accept JWT access tokens issued by Server C.
 
 ---
 
@@ -150,50 +157,100 @@ flowchart LR
 
 | Service | Database | Owns |
 |---|---|---|
-| Server X | DB X | Macepook likes, comments, reactions |
-| Server Y | DB Y | Pinstagram likes, comments, reactions |
-| Server C | DB C | Shared users/accounts |
+| Server X | DB X | Macepook likes, comments and reactions |
+| Server Y | DB Y | Pinstagram likes, comments and reactions |
+| Server C | DB C | Shared users and email verification tokens |
 
-The services do **not** share database credentials.
+The services do not share database credentials.
+
+There are no cross-database foreign keys. Each service is responsible for its own data and schema.
 
 ---
 
-# 4. Shared User Accounts
+# 4. Shared User Accounts and Authentication
 
 Both social platforms use the same user account stored in DB C.
 
-For example, a user can register through Server X:
+The client registers directly with Server C:
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant X as Server X
     participant C as Server C
     participant DB as DB C
+    participant Email
 
-    Client->>X: POST /register
-    X->>C: POST /users + API key
-    C->>DB: INSERT user
+    Client->>C: POST /users
+    C->>DB: Create user and verification token
     DB-->>C: User created
-    C-->>X: 201 Created
-    X-->>Client: 201 Created
+    C->>Email: Send verification email
+    C-->>Client: 201 Created
+    Client->>C: GET /verify-email/<token>
+    C->>DB: Mark email as verified
+    C-->>Client: Email successfully verified
 ```
 
-The same account can then be used by Server Y.
+After email verification, the user can log in:
 
-Authentication is intentionally simple, as required by the assignment.
+```mermaid
+sequenceDiagram
+    participant Client
+    participant C as Server C
 
-Passwords are not stored as plain text. Server C uses Werkzeug password hashing.
+    Client->>C: POST /login
+    C->>C: Validate credentials and verification status
+    C-->>Client: JWT access token
+```
+
+The same access token can be used with Server X and Server Y.
+
+## Password Security
+
+Server C uses Werkzeug password hashing to store password hashes.
+
+## Email Verification
+
+Email verification uses securely generated, single-use tokens:
+
+- Tokens are generated using Python's `secrets` module.
+- Only SHA-256 token hashes are stored in the database.
+- Tokens expire after 24 hours.
+- Used tokens cannot be reused.
+- Users can request a new verification email.
 
 ---
 
-# 5. Data Synchronization
+# 5. JWT Authentication
 
-The most important part of the project is cross-service synchronization.
+The system uses JSON Web Tokens for authentication between clients and the social services.
+
+**Algorithm:** RS256
+**Access token lifetime:** 30 minutes
+
+Server C signs access tokens using its RSA private key.
+
+Server X and Server Y verify tokens using the corresponding public key.
+
+```mermaid
+flowchart TD
+    C[Server C<br/>Private RSA key] -->|Issues JWT| Client
+    Client -->|Bearer token| X[Server X]
+    Client -->|Bearer token| Y[Server Y]
+    X -->|Verify signature| PX[Public RSA key]
+    Y -->|Verify signature| PY[Public RSA key]
+```
+
+The social services do not issue their own user tokens.
+
+User identity is derived from the validated JWT rather than trusted from an arbitrary client-supplied identity.
+
+---
+
+# 6. Data Synchronization
 
 Suppose a user creates a like on Macepook that also needs to be reflected on Pinstagram.
 
-Server X does **not** access DB Y.
+Server X does not access DB Y.
 
 Instead:
 
@@ -214,77 +271,106 @@ sequenceDiagram
     C-->>X: 201 Created
 ```
 
+The synchronization flow is:
+
+1. Server X receives a synchronization request.
+2. Server X authenticates with Server C using an API key.
+3. Server C authenticates with Server Y using a separate API key.
+4. Server Y validates the request and writes the like to DB Y.
+5. Server Y returns the result to Server C.
+6. Server C forwards the response to Server X.
+
+The database operation is performed only by its owning service.
+
+Duplicate likes are prevented by a database uniqueness constraint on `(user_id, post_id)`.
+
 ---
 
-# 6. Security
+# 7. Security
 
-The project uses a simple service-to-service security model appropriate for the assignment.
+The project uses a service-to-service security model appropriate for the assignment.
 
 ## HTTPS
 
 The deployed services communicate using HTTPS through Vercel.
 
-## API keys
+## JWT
 
-Internal service-to-service endpoints require an API key.
+- RS256 asymmetric signing.
+- Private key kept by Server C.
+- Public key used by Server X and Server Y.
+- Access tokens expire after 30 minutes.
+- Protected endpoints require a valid token.
 
-The keys are stored in environment variables and are not hard-coded into the source code. The actual values are intentionally not included in this repository.
+## API Keys
 
-## Database credentials
+Internal service-to-service endpoints require API keys.
 
-Database connection strings are stored in environment variables. They are not committed to Git.
+The keys are stored in environment variables and are not hard-coded into the source code.
 
----
+## Database Credentials
 
-# 7. Environment Variables
+Database connection strings are stored in environment variables and are not committed to Git.
 
-Each service has only the configuration it needs.
+## Passwords and Verification Tokens
 
-### Server X
-
-```text
-DATABASE_URL
-SERVER_C_URL
-SERVER_C_API_KEY
-```
-
-### Server Y
-
-```text
-DATABASE_URL
-SERVER_C_URL
-SERVER_C_API_KEY
-SERVER_Y_TO_C_API_KEY
-```
-
-### Server C
-
-```text
-DATABASE_URL
-SERVER_Y_URL
-SERVER_Y_API_KEY
-SERVER_X_API_KEY
-SERVER_Y_TO_C_API_KEY
-```
-
-Only variable **names** are documented here.
-
-Actual values belong in local `.env` files or deployment environment variables.
+- Passwords are stored as Werkzeug password hashes.
+- Email verification tokens are stored as SHA-256 hashes.
+- Verification tokens expire and cannot be reused.
 
 ---
 
-# 8. Technology Stack
+# 8. Database Migrations
 
-- **Python 3.12**
-- **Flask 3.1**
-- **PostgreSQL**
-- **psycopg2**
-- **Requests**
-- **python-dotenv**
-- **Werkzeug password hashing**
-- **Neon PostgreSQL**
-- **Vercel**
-- **Git**
+Database schema changes are managed using Flask-Migrate and Alembic.
+
+Each service has its own migration directory:
+
+- `server_c/migrations`
+- `server_x/migrations`
+- `server_y/migrations`
+
+Migrations are managed independently for each database.
+
+## Check migration status
+
+Run the following commands from the repository root:
+
+```powershell
+flask --app server_c.app db current -d server_c/migrations
+flask --app server_x.app db current -d server_x/migrations
+flask --app server_y.app db current -d server_y/migrations
+```
+
+To check whether model definitions differ from the database schema:
+
+```powershell
+flask --app server_c.app db check -d server_c/migrations
+flask --app server_x.app db check -d server_x/migrations
+flask --app server_y.app db check -d server_y/migrations
+```
+
+## Apply migrations
+
+```powershell
+flask --app server_c.app db upgrade -d server_c/migrations
+flask --app server_x.app db upgrade -d server_x/migrations
+flask --app server_y.app db upgrade -d server_y/migrations
+```
+
+When running Flask CLI commands for Server X or Server Y from the repository root, disable automatic root `.env` loading so that each service uses its own environment file:
+
+```powershell
+$env:FLASK_SKIP_DOTENV = "1"
+```
+
+After completing the migration commands:
+
+```powershell
+Remove-Item Env:FLASK_SKIP_DOTENV
+```
+
+Migrations are applied explicitly. They are not executed automatically during application startup.
 
 ---
 
@@ -292,58 +378,96 @@ Actual values belong in local `.env` files or deployment environment variables.
 
 The three Flask services are independently deployed on Vercel.
 
-### Production services
+## Production Services
 
 | Service | Vercel URL |
 |---|---|
-| Server C | `https://server-c-iota.vercel.app` |
-| Server X | `https://server-x-five.vercel.app` |
-| Server Y | `https://server-y.vercel.app` |
+| Server C | https://server-c-iota.vercel.app |
+| Server X | https://server-x-five.vercel.app |
+| Server Y | https://server-y.vercel.app |
 
-Each service has its own Vercel project and its own production environment variables.
+Each service has its own Vercel project and production environment variables.
 
-The services therefore remain independently deployable.
+Each service also has its own Neon PostgreSQL database.
 
----
+The services can therefore be deployed and maintained independently.
 
-# 10. Vercel Configuration
+## Vercel Configuration
 
-The project was deployed using Vercel's current Flask deployment support.
+The repository uses a shared Vercel entry point:
 
-The important deployment elements are:
-
-- Flask application
-- `requirements.txt`
-- correct project structure
-- production environment variables
-
-Each service contains its own `requirements.txt`.
-
-Dependencies were generated from the Python environment using `pip freeze`.
-
----
-
-# 11. Local Development
-
-Create and activate the virtual environment:
-
-```cmd
-python -m venv .venv
-.venv\Scripts\activate
+```text
+api/index.py
 ```
 
-Install dependencies:
+The deployment selects the target service using the `SERVICE_NAME` environment variable:
+
+```text
+SERVICE_NAME=C
+SERVICE_NAME=X
+SERVICE_NAME=Y
+```
+
+This allows the same repository structure and deployment entry point to serve three independent Vercel projects.
+
+Each service has its own `requirements.txt`.
+
+---
+
+# 10. Local Development
+
+## Prerequisites
+
+- Python 3.12
+- Git
+- PostgreSQL database access through Neon
+- Vercel CLI (for deployment)
+
+## Create and activate the virtual environment
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+If PowerShell activation is restricted, use Command Prompt:
 
 ```cmd
+.venv\Scripts\activate.bat
+```
+
+## Install dependencies
+
+```powershell
 pip install -r requirements.txt
 ```
 
-Each service can then be run independently.
+Each service also contains its own `requirements.txt` for deployment.
+
+## Environment Files
+
+Configure the environment files separately:
+
+```text
+.env
+server_x/.env
+server_y/.env
+```
+
+The root `.env` contains Server C's local configuration.
+
+Server X and Server Y load their own service-specific environment files.
+
+Never commit these files to Git.
+
+## Run the Services
+
+Each service can be started independently.
 
 ### Server C
 
-```cmd
-python server_c\app.py
+```powershell
+python server_c/app.py
 ```
 
 Default local address:
@@ -354,8 +478,8 @@ http://127.0.0.1:5000
 
 ### Server Y
 
-```cmd
-python server_y\app.py
+```powershell
+python server_y/app.py
 ```
 
 Default local address:
@@ -366,8 +490,8 @@ http://127.0.0.1:5001
 
 ### Server X
 
-```cmd
-python server_x\app.py
+```powershell
+python server_x/app.py
 ```
 
 Default local address:
@@ -378,67 +502,6 @@ http://127.0.0.1:5002
 
 ---
 
-# 12. Git and Secret Management
+# 11. Limitations
 
-The project uses Git for version control.
-
-Sensitive files are ignored:
-
-```text
-.env
-.venv/
-__pycache__/
-.vercel/
-```
-
-The repository was checked to ensure that `.env` files are not tracked.
-
-The deployment configuration therefore remains separate from source code.
-
----
-
-# 13. Limitations and Possible Improvements
-
-This is a small educational project rather than a production banking system. 
-
-These were intentionally kept outside the scope of the assignment.
-
----
-
-# 14. Project Structure
-
-```text
-backend-cloud-assignment/
-│
-├── server_c/
-│   ├── app.py
-│   └── requirements.txt
-│
-├── server_x/
-│   ├── app.py
-│   ├── requirements.txt
-│   └── .gitignore
-│
-├── server_y/
-│   ├── app.py
-│   ├── requirements.txt
-│   └── .gitignore
-│
-├── .gitignore
-├── requirements.txt
-└── README.md
-```
-
-Local environment files are intentionally omitted from the repository.
-
----
-
-# 15. Conclusion
-
-This project demonstrates a small distributed backend architecture in which three services remain independent while still being able to cooperate.
-
-The key architectural principle is:
-
-> **Services communicate through APIs, not through each other's databases.**
-
-The system has been deployed and tested as three independent services on Vercel with PostgreSQL databases hosted on Neon.
+This project demonstrates core backend and cloud architecture concepts. It is an educational solution and is not intended to be a production-scale distributed platform.
